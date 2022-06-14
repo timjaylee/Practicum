@@ -1,0 +1,73 @@
+---
+title: "MPH Practicum"
+output: pdf_document
+---
+
+```{r packages, include = F}
+#load packages at the beginning of each session
+library(tidyverse)
+library(lubridate)
+library(kableExtra)
+library(janitor)
+library(readxl)
+```
+
+```{r load file, include = F}
+#import VA biomarker data from REDCap
+biomarkers <- readr::read_csv("./data/MasterDatabaseLiaoLa-VABiomarkersForBladd_DATA_2022-05-11_1411.csv")
+
+#import clean va detection data
+va <- read_xlsx("./data/VA_Detection.xlsx")
+```
+
+```{r data cleaning, include = F}
+#split biomarker data into pt data and sample data
+pt_hx <- biomarkers %>%
+  filter(study_site == 1) %>%
+  select(record_id, smoke_quit, smoke_packs) %>%
+  rename(id = record_id)
+
+va_clean <- va %>%
+  rename(id = pt) %>%
+  #sort by id and date
+  arrange(id, desc(date)) %>%
+  #remove duplicate ids
+  distinct(id, .keep_all = T)
+
+detection <- merge(x = va_clean, y = pt_hx, by="id", all.x = T) %>%
+  #add indicator variable for smoke_packs
+  mutate(packyrs = if_else(is.na(smoke_packs), 0, 1)) %>%
+  #add indicator variable for smoke_quit
+  mutate(yearquit = if_else(is.na(smoke_quit), 0, 1))
+```
+
+```{r descriptive data, echo = F}
+smoking_count <- detection %>%
+  group_by(smoking) %>%
+  count(smoking)
+  
+cysto_result_risk <- detection %>%
+  group_by(visual_suspicion, risk) %>%
+  count(visual_suspicion, risk)
+
+smoking_hx <- detection %>%
+  group_by(smoking, packyrs, yearquit) %>%
+  count(smoking, packyrs, yearquit)
+```
+
+```{r figures, echo = F}
+kable(smoking_count,
+      booktabs = T,
+      align = "l",
+      caption = "Smoking count")
+
+kable(cysto_result_risk,
+      booktabs = T,
+      align = "l",
+      caption = "Cysto results vs risk")
+
+kable(smoking_hx,
+      booktabs = T,
+      align = "l",
+      caption = "Smoking history")
+```
