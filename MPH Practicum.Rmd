@@ -10,6 +10,7 @@ library(lubridate)
 library(kableExtra)
 library(janitor)
 library(readxl)
+library(lmtest)
 ```
 
 ```{r load file, include = F}
@@ -38,7 +39,15 @@ detection <- merge(x = va_clean, y = pt_hx, by="id", all.x = T) %>%
   #add indicator variable for smoke_packs
   mutate(packyrs = if_else(is.na(smoke_packs), 0, 1)) %>%
   #add indicator variable for smoke_quit
-  mutate(yearquit = if_else(is.na(smoke_quit), 0, 1))
+  mutate(yearquit = if_else(is.na(smoke_quit), 0, 1)) %>%
+  #add indicator variable for bladder cancer
+  mutate(bca = if_else(risk == "NoBC", 0, 1))
+
+#make smoking a factor
+detection$smoking <- factor(detection$smoking, levels = c("never", "former", "current"))
+
+#make risk a factor
+detection$risk <- factor(detection$risk, levels = c("NoBC", "low", "intermediate", "high"))
 ```
 
 ```{r descriptive data, echo = F}
@@ -47,27 +56,65 @@ smoking_count <- detection %>%
   count(smoking)
   
 cysto_result_risk <- detection %>%
-  group_by(visual_suspicion, risk) %>%
-  count(visual_suspicion, risk)
+  group_by(visual_suspicion, risk, bca) %>%
+  count(visual_suspicion, risk, bca)
 
 smoking_hx <- detection %>%
   group_by(smoking, packyrs, yearquit) %>%
   count(smoking, packyrs, yearquit)
 ```
 
+```{r demographics table, echo = F}
+
+```
+
+```{r exclusion table, echo = F}
+exclusion <- data.frame(Criteria = c("Initial", "UTUC", "No cysto", "No follow up", "Insufficient RNA for biomarker analysis", "Duplicates", "Total"),
+                        n = c("184", "5","1", "4", "7", "9", "158")
+                        )
+
+kable(exclusion,
+      booktabs = T,
+      align = "lr",
+      caption = "Exclusion criteria",
+      col.names = c("", "n")
+      ) %>%
+  pack_rows(index = c(" " = 1, "Excluded" = 5)) %>%
+  row_spec(1, bold = T) %>%
+  row_spec(7, bold = T)
+```
+
 ```{r figures, echo = F}
 kable(smoking_count,
       booktabs = T,
       align = "l",
-      caption = "Smoking count")
+      caption = "Smoking count"
+      )
 
 kable(cysto_result_risk,
       booktabs = T,
       align = "l",
-      caption = "Cysto results vs risk")
+      caption = "Cysto results vs risk"
+      )
 
 kable(smoking_hx,
       booktabs = T,
       align = "l",
-      caption = "Smoking history")
+      caption = "Smoking history"
+      )
+```
+
+\newpage
+
+```{r analysis}
+#logistic regression cancer = biomarkers
+model1 <- glm(bca ~ MODEL3, family = "binomial", data = detection)
+summary(model1)
+
+#logistic regression cancer = biomarkers + smoking
+model2 <- glm(bca ~ MODEL3 + smoking, family = "binomial", data = detection)
+summary(model2)
+
+#likelihood ratio test
+lrtest(model1, model2)
 ```
