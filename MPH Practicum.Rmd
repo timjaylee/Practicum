@@ -10,7 +10,13 @@ library(lubridate)
 library(kableExtra)
 library(janitor)
 library(readxl)
+library(writexl)
 library(lmtest)
+library(broom)
+library(pscl)
+library(flexmix)
+library(pROC)
+library(ggplot2)
 ```
 
 ```{r load file, include = F}
@@ -41,7 +47,9 @@ detection <- merge(x = va_clean, y = pt_hx, by="id", all.x = T) %>%
   #add indicator variable for smoke_quit
   mutate(yearquit = if_else(is.na(smoke_quit), 0, 1)) %>%
   #add indicator variable for bladder cancer
-  mutate(bca = if_else(risk == "NoBC", 0, 1))
+  mutate(bca = if_else(risk == "NoBC", 0, 1)) %>%
+  #add indicator variable for smoker (current + former)
+  mutate(smoker = if_else(smoking == "never", 0, 1))
 
 #make smoking a factor
 detection$smoking <- factor(detection$smoking, levels = c("never", "former", "current"))
@@ -52,8 +60,8 @@ detection$risk <- factor(detection$risk, levels = c("NoBC", "low", "intermediate
 
 ```{r descriptive data, echo = F}
 smoking_count <- detection %>%
-  group_by(smoking) %>%
-  count(smoking)
+  group_by(smoking, smoker) %>%
+  count(smoking, smoker)
   
 cysto_result_risk <- detection %>%
   group_by(visual_suspicion, risk, bca) %>%
@@ -106,15 +114,96 @@ kable(smoking_hx,
 
 \newpage
 
-```{r analysis}
+```{r log models}
 #logistic regression cancer = biomarkers
-model1 <- glm(bca ~ MODEL3, family = "binomial", data = detection)
-summary(model1)
+log_biomarkers <- glm(bca ~ ROBO1 + CRH + IGF2, family = "binomial", data = detection)
+summary(log_biomarkers)
 
-#logistic regression cancer = biomarkers + smoking
-model2 <- glm(bca ~ MODEL3 + smoking, family = "binomial", data = detection)
-summary(model2)
+#logistic regression cancer = model3
+log_model3 <- glm(bca ~ MODEL3, family = "binomial", data = detection)
+summary(log_model3)
 
-#likelihood ratio test
-lrtest(model1, model2)
+#logistic regression cancer = biomarkers + smoking(binary)
+log_smoker <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker, family = "binomial", data = detection)
+summary(log_smoker)
+
+#logistic regression cancer = biomarkers + smoking(factor)
+log_smoking <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data = detection)
+summary(log_smoking)
+```
+
+```{r r squared}
+#R-squared cancer = biomarkers
+pR2(log_biomarkers)['McFadden']
+
+#R-squared cancer = model3
+pR2(log_model3)['McFadden']
+
+#R-squared cancer = biomarkers + smoking(binary)
+pR2(log_smoker)['McFadden']
+
+#R-squared cancer = biomarkers + smoking(factor)
+pR2(log_smoking)['McFadden']
+```
+
+```{r c statistics}
+#c statistics cancer = biomarkers
+predictions_biomarkers <- predict(log_biomarkers, type = "response")
+roc(detection$bca, predictions_biomarkers)
+
+#c statistics cancer = model3
+predictions_model3 <- predict(log_model3, type = "response")
+roc(detection$bca, predictions_model3)
+
+#c statistics cancer = biomarkers + smoking(binary)
+predictions_smoker <- predict(log_smoker, type = "response")
+roc(detection$bca, predictions_smoker)
+
+#c statistics cancer = biomarkers + smoking(factor)
+predictions_smoking <- predict(log_smoking, type = "response")
+roc(detection$bca, predictions_smoking)
+```
+
+```{r BIC}
+#BIC cancer = biomarkers
+BIC(log_biomarkers)
+
+#BIC cancer = model3
+BIC(log_model3)
+
+#BIC cancer = biomarkers + smoking(binary)
+BIC(log_smoker)
+
+#BIC cancer = biomarkers + smoking(factor)
+BIC(log_smoking)
+```
+
+```{r ROC curves}
+#ROC cancer = biomarkers
+ggroc(roc(detection$bca, predictions_biomarkers)) +
+  theme_minimal() + 
+  ggtitle("ROC log_biomarkers") + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+
+#ROC cancer = model3
+ggroc(roc(detection$bca, predictions_model3)) +
+  theme_minimal() + 
+  ggtitle("ROC log_model3") + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+
+#ROC cancer = biomarkers + smoking(binary)
+ggroc(roc(detection$bca, predictions_smoker)) +
+  theme_minimal() + 
+  ggtitle("ROC log_smoker") + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+
+#ROC cancer = biomarkers + smoking(factor)
+ggroc(roc(detection$bca, predictions_smoking)) +
+  theme_minimal() + 
+  ggtitle("ROC log_smoking") + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+```
+
+```{r export data, include = F}
+write_xlsx(detection, "./data/detection.xlsx")
 ```
