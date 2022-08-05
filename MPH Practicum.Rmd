@@ -20,28 +20,28 @@ library(ggplot2)
 ```
 
 ```{r load file, include = F}
-#import VA biomarker data from REDCap
-biomarkers <- readr::read_csv("./data/MasterDatabaseLiaoLa-VABiomarkersForBladd_DATA_2022-05-11_1411.csv")
+#import smoking data
+smoking_data <- read_xlsx("./data/smoking.xlsx")
 
 #import clean va detection data
 va <- read_xlsx("./data/VA_Detection.xlsx")
 ```
 
 ```{r data cleaning, include = F}
-#split biomarker data into pt data and sample data
-pt_hx <- biomarkers %>%
-  filter(study_site == 1) %>%
-  select(record_id, smoke_quit, smoke_packs) %>%
-  rename(id = record_id)
+#clean smoking data
+smoking_clean <- smoking_data %>%
+  select(-date)
 
+#clean va detection data
 va_clean <- va %>%
   rename(id = pt) %>%
   #sort by id and date
   arrange(id, desc(date)) %>%
   #remove duplicate ids
-  distinct(id, .keep_all = T)
+  distinct(id, .keep_all = T) %>%
+  select(-smoking)
 
-detection <- merge(x = va_clean, y = pt_hx, by="id", all.x = T) %>%
+detection <- merge(x = va_clean, y = smoking_clean, by="id", all.x = T) %>%
   #add indicator variable for smoke_packs
   mutate(packyrs = if_else(is.na(smoke_packs), 0, 1)) %>%
   #add indicator variable for smoke_quit
@@ -73,7 +73,18 @@ smoking_hx <- detection %>%
 ```
 
 ```{r demographics table, echo = F}
+demographics <- data.frame(category = c("Male", "Female", "Median Age", "Never", "Former", "Current"),
+                           cancer = c(""),
+                           noncancer = c("")
+                           )
 
+kable(demographics,
+      booktabs = T,
+      align = "lrr",
+      caption = "Demographics",
+      ) %>%
+  pack_rows(index = c("Gender" = 2, " " = 1, "Smoking History" = 3)) %>%
+  row_spec(3, bold = T)
 ```
 
 ```{r exclusion table, echo = F}
@@ -92,7 +103,9 @@ kable(exclusion,
   row_spec(7, bold = T)
 ```
 
-```{r figures, echo = F}
+\newpage
+
+```{r figures}
 kable(smoking_count,
       booktabs = T,
       align = "l",
@@ -132,6 +145,8 @@ log_smoking <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data
 summary(log_smoking)
 ```
 
+\newpage
+
 ```{r r squared}
 #R-squared cancer = biomarkers
 pR2(log_biomarkers)['McFadden']
@@ -145,6 +160,8 @@ pR2(log_smoker)['McFadden']
 #R-squared cancer = biomarkers + smoking(factor)
 pR2(log_smoking)['McFadden']
 ```
+
+\newpage
 
 ```{r c statistics}
 #c statistics cancer = biomarkers
@@ -164,6 +181,8 @@ predictions_smoking <- predict(log_smoking, type = "response")
 roc(detection$bca, predictions_smoking)
 ```
 
+\newpage
+
 ```{r BIC}
 #BIC cancer = biomarkers
 BIC(log_biomarkers)
@@ -177,6 +196,8 @@ BIC(log_smoker)
 #BIC cancer = biomarkers + smoking(factor)
 BIC(log_smoking)
 ```
+
+\newpage
 
 ```{r ROC curves}
 #ROC cancer = biomarkers
