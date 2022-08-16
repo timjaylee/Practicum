@@ -17,21 +17,30 @@ library(pscl)
 library(flexmix)
 library(pROC)
 library(ggplot2)
+library(caTools) #overlay ROC curves
 ```
 
-```{r load file, include = F}
+```{r import data, include = F}
 #import smoking data
 smoking_data <- read_xlsx("./data/smoking.xlsx")
 
 #import clean va detection data
 va <- read_xlsx("./data/VA_Detection.xlsx")
+
+#import pt demographic data
+demo <- read.csv("./data/MasterDatabaseLiaoLa-VABiomarkersForBladd_DATA_2022-08-16_1204.csv")
 ```
 
-```{r data cleaning, include = F}
+```{r smoking data cleaning, include = F}
 #clean smoking data
 smoking_clean <- smoking_data %>%
-  select(-date)
-
+  mutate(date = as.numeric(format(date, "%Y"))) %>%
+  mutate(years_quit = date - smoke_quit) %>%
+  select(-date) %>%
+  mutate(smoke_packs = ifelse(smoking == "never" & is.na(smoke_packs) == T, 0, smoke_packs))
+```
+  
+```{r va detection data cleaning, include = F}
 #clean va detection data
 va_clean <- va %>%
   rename(id = pt) %>%
@@ -40,8 +49,23 @@ va_clean <- va %>%
   #remove duplicate ids
   distinct(id, .keep_all = T) %>%
   select(-smoking)
+```
 
-detection <- merge(x = va_clean, y = smoking_clean, by="id", all.x = T) %>%
+```{r demographic data cleaning, include = F}
+#Race: 0 = white, 1 = black, 2 = asian, 3 = hispanic, 4 = native hawaiian or other pacific islander, 98 = unknown, 99 = other
+#Ethnicity: 1 = hispanic or latino, 2 = non-hispanic, 3 = unknown
+demo_clean <- demo %>%
+  drop_na(gender) %>%
+  select(record_id, race, ethnicity, pt_bmi) %>%
+  rename(id = record_id, bmi = pt_bmi)
+
+demo_final <- merge(x = smoking_clean, y = demo_clean, by = "id", all.x = T)
+```
+
+```{r merging datasets, include = F}
+detection <- merge(x = va_clean, y = demo_final, by = "id", all.x = T) %>%
+  #remove id 1020 and 1603 for chewing tobacco
+  filter(id != "1020" & id != "1603") %>%
   #add indicator variable for smoke_packs
   mutate(packyrs = if_else(is.na(smoke_packs), 0, 1)) %>%
   #add indicator variable for smoke_quit
@@ -49,8 +73,12 @@ detection <- merge(x = va_clean, y = smoking_clean, by="id", all.x = T) %>%
   #add indicator variable for bladder cancer
   mutate(bca = if_else(risk == "NoBC", 0, 1)) %>%
   #add indicator variable for smoker (current + former)
-  mutate(smoker = if_else(smoking == "never", 0, 1))
+  mutate(smoker = if_else(smoking == "never", 0, 1)) %>%
+  #make smoke_packs numeric
+  mutate(smoke_packs = as.numeric(smoke_packs))
+```
 
+```{r creating factor variables, include = F}
 #make smoking a factor
 detection$smoking <- factor(detection$smoking, levels = c("never", "former", "current"))
 
@@ -59,37 +87,60 @@ detection$risk <- factor(detection$risk, levels = c("NoBC", "low", "intermediate
 ```
 
 ```{r descriptive data, echo = F}
+#count number of smokers in each level of smoking
 smoking_count <- detection %>%
   group_by(smoking, smoker) %>%
   count(smoking, smoker)
   
+#compare visual suspicion, risk, bca
 cysto_result_risk <- detection %>%
   group_by(visual_suspicion, risk, bca) %>%
   count(visual_suspicion, risk, bca)
 
+#compare smoking, packyrs, yearquit
 smoking_hx <- detection %>%
   group_by(smoking, packyrs, yearquit) %>%
   count(smoking, packyrs, yearquit)
+
+#count gender by bca outcome
+gender_count <- detection %>%
+  group_by(bca) %>%
+  count(sex)
+
+#count race by bca outcome
+race_count <- detection %>%
+  group_by(bca) %>%
+  count(race)
+
+#median age + avg bmi by bca outcome
+age_bmi <- detection %>%
+  group_by(bca) %>%
+  summarize(median_age = median(age), avg_bmi = mean(bmi, na.rm = T))
+
+#smoking category count by bca outcome
+smoking_bca_count <- detection %>%
+  group_by(bca) %>%
+  count(smoking)
 ```
 
 ```{r demographics table, echo = F}
-demographics <- data.frame(category = c("Male", "Female", "Median Age", "Never", "Former", "Current"),
-                           cancer = c(""),
-                           noncancer = c("")
+demographics <- data.frame(category = c(" ", "Male", "Female", " ", "Never", "Former", "Current"),
+                           cancer = c("66", "65", "1", "74", "9", "40", "17"),
+                           noncancer = c("90", "85", "5", "72", "41", "38", "11")
                            )
 
 kable(demographics,
       booktabs = T,
       align = "lrr",
       caption = "Demographics",
+      col.names = c(" ", "Cancer", "No Cancer")
       ) %>%
-  pack_rows(index = c("Gender" = 2, " " = 1, "Smoking History" = 3)) %>%
-  row_spec(3, bold = T)
+  pack_rows(index = c("n" = 1, "Gender" = 2, "Median Age" = 1, "Smoking History" = 3))
 ```
 
 ```{r exclusion table, echo = F}
-exclusion <- data.frame(Criteria = c("Initial", "UTUC", "No cysto", "No follow up", "Insufficient RNA for biomarker analysis", "Duplicates", "Total"),
-                        n = c("184", "5","1", "4", "7", "9", "158")
+exclusion <- data.frame(Criteria = c("Initial", "UTUC", "No cysto", "No follow up", "Insufficient RNA for biomarker analysis", "Duplicates", "Chewing Tobacco", "Total"),
+                        n = c("184", "5","1", "4", "7", "9", "2", "156")
                         )
 
 kable(exclusion,
@@ -98,9 +149,9 @@ kable(exclusion,
       caption = "Exclusion criteria",
       col.names = c("", "n")
       ) %>%
-  pack_rows(index = c(" " = 1, "Excluded" = 5)) %>%
+  pack_rows(index = c(" " = 1, "Excluded" = 6)) %>%
   row_spec(1, bold = T) %>%
-  row_spec(7, bold = T)
+  row_spec(8, bold = T)
 ```
 
 \newpage
@@ -136,13 +187,29 @@ summary(log_biomarkers)
 log_model3 <- glm(bca ~ MODEL3, family = "binomial", data = detection)
 summary(log_model3)
 
-#logistic regression cancer = biomarkers + smoking(binary)
+#logistic regression cancer = smoking(factor)
+log_smoking_alone <- glm(bca ~ smoking, family = "binomial", data = detection)
+summary(log_smoking_alone)
+
+#logistic regression cancer = biomarkers + smoker(binary)
 log_smoker <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker, family = "binomial", data = detection)
 summary(log_smoker)
 
 #logistic regression cancer = biomarkers + smoking(factor)
 log_smoking <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data = detection)
 summary(log_smoking)
+
+#logistic regression cancer = biomarkers + pack years
+log_packyears <- glm(bca ~ ROBO1 + CRH + IGF2 + smoke_packs, family = "binomial", data = detection)
+summary(log_packyears)
+
+#logistic regression cancer = biomarkers + smoker(binary) + pack year
+log_smoker_packyears <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker + smoke_packs, family = "binomial", data = detection)
+summary(log_smoker_packyears)
+
+#logistic regression cancer = biomarkers + smoking(factor) + pack year
+log_smoking_packyears <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking + smoke_packs, family = "binomial", data = detection)
+summary(log_smoking_packyears)
 ```
 
 \newpage
@@ -154,31 +221,23 @@ pR2(log_biomarkers)['McFadden']
 #R-squared cancer = model3
 pR2(log_model3)['McFadden']
 
-#R-squared cancer = biomarkers + smoking(binary)
+#R-squared cancer = smoking(factor)
+pR2(log_smoking_alone)['McFadden']
+
+#R-squared cancer = biomarkers + smoker(binary)
 pR2(log_smoker)['McFadden']
 
 #R-squared cancer = biomarkers + smoking(factor)
 pR2(log_smoking)['McFadden']
-```
 
-\newpage
+#R-squared cancer = biomarkers + packyears
+pR2(log_packyears)['McFadden']
 
-```{r c statistics}
-#c statistics cancer = biomarkers
-predictions_biomarkers <- predict(log_biomarkers, type = "response")
-roc(detection$bca, predictions_biomarkers)
+#R-squared cancer = biomarkers + smoker + packyears
+pR2(log_smoker_packyears)['McFadden']
 
-#c statistics cancer = model3
-predictions_model3 <- predict(log_model3, type = "response")
-roc(detection$bca, predictions_model3)
-
-#c statistics cancer = biomarkers + smoking(binary)
-predictions_smoker <- predict(log_smoker, type = "response")
-roc(detection$bca, predictions_smoker)
-
-#c statistics cancer = biomarkers + smoking(factor)
-predictions_smoking <- predict(log_smoking, type = "response")
-roc(detection$bca, predictions_smoking)
+#R-squared cancer = biomarkers + smoking + packyears
+pR2(log_smoking_packyears)['McFadden']
 ```
 
 \newpage
@@ -199,7 +258,77 @@ BIC(log_smoking)
 
 \newpage
 
-```{r ROC curves}
+```{r overlay ROC curves, echo = F}
+roc(detection$bca, log_biomarkers$fitted.values,
+    plot = T, col = "#8C1515", print.auc = T, xlim = c(1,-1))
+plot.roc(detection$bca, log_model3$fitted.values,
+         col = "#008566", print.auc = T, add = T, print.auc.y = .4)
+plot.roc(detection$bca, log_smoker$fitted.values,
+         col = "#8F993E", print.auc = T, add = T, print.auc.y = .6)
+plot.roc(detection$bca, log_smoking$fitted.values,
+         col = "#4298B5", print.auc = T, add = T, print.auc.y = .7)
+legend("bottomright",
+       legend = c("Biomarkers", "Model 3", "Biomarkers + Smoker", "Biomarkers + Smoking"),
+       col = c("#8C1515", "#008566", "#8F993E", "#4298B5"),
+       lwd = 2)
+```
+
+\newpage
+
+```{r overlay ROC curves pack years, echo = F}
+detection2 <- detection %>%
+  filter(is.na(smoke_packs) == F)
+
+#logistic regression cancer = biomarkers
+log_biomarkers2 <- glm(bca ~ ROBO1 + CRH + IGF2, family = "binomial", data = detection2)
+
+#logistic regression cancer = model3
+log_model32 <- glm(bca ~ MODEL3, family = "binomial", data = detection2)
+
+#logistic regression cancer = biomarkers + smoker(binary)
+log_smoker2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker, family = "binomial", data = detection2)
+
+#logistic regression cancer = biomarkers + smoking(factor)
+log_smoking2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data = detection2)
+  
+roc(detection2$bca, log_biomarkers2$fitted.values,
+    plot = T, col = "#8C1515", print.auc = T, xlim = c(1,-2))
+plot.roc(detection2$bca, log_model32$fitted.values,
+         col = "#008566", print.auc = T, add = T, print.auc.y = .4)
+plot.roc(detection2$bca, log_smoker2$fitted.values,
+         col = "#8F993E", print.auc = T, add = T, print.auc.y = .6)
+plot.roc(detection2$bca, log_smoking2$fitted.values,
+         col = "#4298B5", print.auc = T, add = T, print.auc.y = .7)
+plot.roc(detection2$bca, log_smoker_packyears$fitted.values,
+         col = "#E04F39", print.auc = T, add = T, print.auc.y = .8)
+plot.roc(detection2$bca, log_smoking_packyears$fitted.values,
+         col = "#620059", print.auc = T, add = T, print.auc.y = .9)
+legend("bottomright",
+       legend = c("Biomarkers", "Model 3", "Biomarkers + Smoker", "Biomarkers + Smoking", "Markers + Smoker + Packs", "Markers + Smoking + Packs"),
+       col = c("#8C1515", "#008566", "#8F993E", "#4298B5", "#E04F39", "#620059"),
+       lwd = 2)
+```
+
+```{unused code, include = F}
+#export data
+write_xlsx(detection, "./data/detection.xlsx")
+
+#c statistics cancer = biomarkers
+predictions_biomarkers <- predict(log_biomarkers, type = "response")
+roc(detection$bca, predictions_biomarkers)
+
+#c statistics cancer = model3
+predictions_model3 <- predict(log_model3, type = "response")
+roc(detection$bca, predictions_model3)
+
+#c statistics cancer = biomarkers + smoking(binary)
+predictions_smoker <- predict(log_smoker, type = "response")
+roc(detection$bca, predictions_smoker)
+
+#c statistics cancer = biomarkers + smoking(factor)
+predictions_smoking <- predict(log_smoking, type = "response")
+roc(detection$bca, predictions_smoking)
+
 #ROC cancer = biomarkers
 ggroc(roc(detection$bca, predictions_biomarkers)) +
   theme_minimal() + 
@@ -223,8 +352,4 @@ ggroc(roc(detection$bca, predictions_smoking)) +
   theme_minimal() + 
   ggtitle("ROC log_smoking") + 
   geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
-```
-
-```{r export data, include = F}
-write_xlsx(detection, "./data/detection.xlsx")
 ```
