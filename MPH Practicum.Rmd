@@ -261,51 +261,13 @@ BIC(log_smoking)
 ```{r overlay ROC curves, echo = F}
 roc(detection$bca, log_biomarkers$fitted.values,
     plot = T, col = "#8C1515", print.auc = T, xlim = c(1,-1))
-plot.roc(detection$bca, log_model3$fitted.values,
-         col = "#008566", print.auc = T, add = T, print.auc.y = .4)
-plot.roc(detection$bca, log_smoker$fitted.values,
-         col = "#8F993E", print.auc = T, add = T, print.auc.y = .6)
+plot.roc(detection$bca, log_smoking_alone$fitted.values,
+         col = "#E98300", print.auc = T, add = T, print.auc.y = .4)
 plot.roc(detection$bca, log_smoking$fitted.values,
-         col = "#4298B5", print.auc = T, add = T, print.auc.y = .7)
+         col = "#016895", print.auc = T, add = T, print.auc.y = .6)
 legend("bottomright",
-       legend = c("Biomarkers", "Model 3", "Biomarkers + Smoker", "Biomarkers + Smoking"),
-       col = c("#8C1515", "#008566", "#8F993E", "#4298B5"),
-       lwd = 2)
-```
-
-\newpage
-
-```{r overlay ROC curves pack years, echo = F}
-detection2 <- detection %>%
-  filter(is.na(smoke_packs) == F)
-
-#logistic regression cancer = biomarkers
-log_biomarkers2 <- glm(bca ~ ROBO1 + CRH + IGF2, family = "binomial", data = detection2)
-
-#logistic regression cancer = model3
-log_model32 <- glm(bca ~ MODEL3, family = "binomial", data = detection2)
-
-#logistic regression cancer = biomarkers + smoker(binary)
-log_smoker2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker, family = "binomial", data = detection2)
-
-#logistic regression cancer = biomarkers + smoking(factor)
-log_smoking2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data = detection2)
-  
-roc(detection2$bca, log_biomarkers2$fitted.values,
-    plot = T, col = "#8C1515", print.auc = T, xlim = c(1,-2))
-plot.roc(detection2$bca, log_model32$fitted.values,
-         col = "#008566", print.auc = T, add = T, print.auc.y = .4)
-plot.roc(detection2$bca, log_smoker2$fitted.values,
-         col = "#8F993E", print.auc = T, add = T, print.auc.y = .6)
-plot.roc(detection2$bca, log_smoking2$fitted.values,
-         col = "#4298B5", print.auc = T, add = T, print.auc.y = .7)
-plot.roc(detection2$bca, log_smoker_packyears$fitted.values,
-         col = "#E04F39", print.auc = T, add = T, print.auc.y = .8)
-plot.roc(detection2$bca, log_smoking_packyears$fitted.values,
-         col = "#620059", print.auc = T, add = T, print.auc.y = .9)
-legend("bottomright",
-       legend = c("Biomarkers", "Model 3", "Biomarkers + Smoker", "Biomarkers + Smoking", "Markers + Smoker + Packs", "Markers + Smoking + Packs"),
-       col = c("#8C1515", "#008566", "#8F993E", "#4298B5", "#E04F39", "#620059"),
+       legend = c("Biomarkers", "Smoking", "Biomarkers + Smoking"),
+       col = c("#8C1515", "#E98300", "#016895"),
        lwd = 2)
 ```
 
@@ -352,4 +314,37 @@ ggroc(roc(detection$bca, predictions_smoking)) +
   theme_minimal() + 
   ggtitle("ROC log_smoking") + 
   geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+
+
+detection2 <- detection %>%
+  filter(is.na(smoke_packs) == F)
+
+#logistic regression cancer = biomarkers
+log_biomarkers2 <- glm(bca ~ ROBO1 + CRH + IGF2, family = "binomial", data = detection2)
+
+#logistic regression cancer = model3
+log_model32 <- glm(bca ~ MODEL3, family = "binomial", data = detection2)
+
+#logistic regression cancer = biomarkers + smoker(binary)
+log_smoker2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoker, family = "binomial", data = detection2)
+
+#logistic regression cancer = biomarkers + smoking(factor)
+log_smoking2 <- glm(bca ~ ROBO1 + CRH + IGF2 + smoking, family = "binomial", data = detection2)
+  
+roc(detection2$bca, log_biomarkers2$fitted.values,
+    plot = T, col = "#8C1515", print.auc = T, xlim = c(1,-2))
+plot.roc(detection2$bca, log_model32$fitted.values,
+         col = "#008566", print.auc = T, add = T, print.auc.y = .4)
+plot.roc(detection2$bca, log_smoker2$fitted.values,
+         col = "#8F993E", print.auc = T, add = T, print.auc.y = .6)
+plot.roc(detection2$bca, log_smoking2$fitted.values,
+         col = "#4298B5", print.auc = T, add = T, print.auc.y = .7)
+plot.roc(detection2$bca, log_smoker_packyears$fitted.values,
+         col = "#E04F39", print.auc = T, add = T, print.auc.y = .8)
+plot.roc(detection2$bca, log_smoking_packyears$fitted.values,
+         col = "#620059", print.auc = T, add = T, print.auc.y = .9)
+legend("bottomright",
+       legend = c("Biomarkers", "Model 3", "Biomarkers + Smoker", "Biomarkers + Smoking", "Markers + Smoker + Packs", "Markers + Smoking + Packs"),
+       col = c("#8C1515", "#008566", "#8F993E", "#4298B5", "#E04F39", "#620059"),
+       lwd = 2)
 ```
