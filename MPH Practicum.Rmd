@@ -34,7 +34,6 @@ demo <- read.csv("./data/MasterDatabaseLiaoLa-VABiomarkersForBladd_DATA_2022-08-
 ```{r smoking data cleaning, include = F}
 #clean smoking data
 smoking_clean <- smoking_data %>%
-  mutate(date = as.numeric(format(date, "%Y"))) %>%
   mutate(years_quit = date - smoke_quit) %>%
   select(-date) %>%
   mutate(smoke_packs = ifelse(smoking == "never" & is.na(smoke_packs) == T, 0, smoke_packs))
